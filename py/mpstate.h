@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -23,8 +23,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef __MICROPY_INCLUDED_PY_MPSTATE_H__
-#define __MICROPY_INCLUDED_PY_MPSTATE_H__
+#ifndef MICROPY_INCLUDED_PY_MPSTATE_H
+#define MICROPY_INCLUDED_PY_MPSTATE_H
 
 #include <stdint.h>
 
@@ -36,7 +36,7 @@
 #include "py/objlist.h"
 #include "py/objexcept.h"
 
-// This file contains structures defining the state of the Micro Python
+// This file contains structures defining the state of the MicroPython
 // memory system, runtime and virtual machine.  The state is a global
 // variable, but in the future it is hoped that the state can become local.
 
@@ -120,8 +120,8 @@ typedef struct _mp_state_vm_t {
     // memory for exception arguments if we can't allocate RAM
     #if MICROPY_ENABLE_EMERGENCY_EXCEPTION_BUF
     #if MICROPY_EMERGENCY_EXCEPTION_BUF_SIZE > 0
-    // statically allocated buf
-    byte mp_emergency_exception_buf[MICROPY_EMERGENCY_EXCEPTION_BUF_SIZE];
+    // statically allocated buf (needs to be aligned to mp_obj_t)
+    mp_obj_t mp_emergency_exception_buf[MICROPY_EMERGENCY_EXCEPTION_BUF_SIZE / sizeof(mp_obj_t)];
     #else
     // dynamically allocated buf
     byte *mp_emergency_exception_buf;
@@ -248,4 +248,4 @@ extern mp_state_thread_t *mp_thread_get_state(void);
 #define MP_STATE_THREAD(x) (mp_state_ctx.thread.x)
 #endif
 
-#endif // __MICROPY_INCLUDED_PY_MPSTATE_H__
+#endif // MICROPY_INCLUDED_PY_MPSTATE_H

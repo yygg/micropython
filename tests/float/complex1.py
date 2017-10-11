@@ -37,9 +37,18 @@ ans = 1j ** 2.5j; print("%.5g %.5g" % (ans.real, ans.imag))
 print(1j == 1)
 print(1j == 1j)
 
+# comparison of nan is special
+nan = float('nan') * 1j
+print(nan == 1j)
+print(nan == nan)
+
 # builtin abs
 print(abs(1j))
 print("%.5g" % abs(1j + 2))
+
+# builtin hash
+print(hash(1 + 0j))
+print(type(hash(1j)))
 
 # float on lhs should delegate to complex
 print(1.2 + 3j)

@@ -1,10 +1,14 @@
 # test that iterating doesn't use the heap
+try:
+    import array
+except ImportError:
+    print("SKIP")
+    raise SystemExit
 
 try:
     from micropython import heap_lock, heap_unlock
 except (ImportError, AttributeError):
     heap_lock = heap_unlock = lambda:0
-import array
 
 def do_iter(l):
     for i in l:
@@ -20,7 +24,7 @@ ar = array.array('H', (123, 456))
 t = (1, 2, 3)
 l = [1, 2]
 d = {1:2}
-s = {1}
+s = set((1,))
 fs = frozenset((1,))
 g1 = (100 + x for x in range(2))
 g2 = gen_func()

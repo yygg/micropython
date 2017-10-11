@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -23,13 +23,14 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#ifndef __MICROPY_INCLUDED_PY_OBJ_H__
-#define __MICROPY_INCLUDED_PY_OBJ_H__
+#ifndef MICROPY_INCLUDED_PY_OBJ_H
+#define MICROPY_INCLUDED_PY_OBJ_H
 
 #include "py/mpconfig.h"
 #include "py/misc.h"
 #include "py/qstr.h"
 #include "py/mpprint.h"
+#include "py/runtime0.h"
 
 // This is the definition of the opaque MicroPython object type.
 // All concrete objects have an encoding within this type and the
@@ -429,8 +430,8 @@ typedef struct _mp_obj_iter_buf_t {
 typedef void (*mp_print_fun_t)(const mp_print_t *print, mp_obj_t o, mp_print_kind_t kind);
 typedef mp_obj_t (*mp_make_new_fun_t)(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args);
 typedef mp_obj_t (*mp_call_fun_t)(mp_obj_t fun, size_t n_args, size_t n_kw, const mp_obj_t *args);
-typedef mp_obj_t (*mp_unary_op_fun_t)(mp_uint_t op, mp_obj_t);
-typedef mp_obj_t (*mp_binary_op_fun_t)(mp_uint_t op, mp_obj_t, mp_obj_t);
+typedef mp_obj_t (*mp_unary_op_fun_t)(mp_unary_op_t op, mp_obj_t);
+typedef mp_obj_t (*mp_binary_op_fun_t)(mp_binary_op_t op, mp_obj_t, mp_obj_t);
 typedef void (*mp_attr_fun_t)(mp_obj_t self_in, qstr attr, mp_obj_t *dest);
 typedef mp_obj_t (*mp_subscr_fun_t)(mp_obj_t self_in, mp_obj_t index, mp_obj_t value);
 typedef mp_obj_t (*mp_getiter_fun_t)(mp_obj_t self_in, mp_obj_iter_buf_t *iter_buf);
@@ -470,16 +471,27 @@ typedef struct _mp_stream_p_t {
 } mp_stream_p_t;
 
 struct _mp_obj_type_t {
+    // A type is an object so must start with this entry, which points to mp_type_type.
     mp_obj_base_t base;
+
+    // The name of this type.
     qstr name;
+
+    // Corresponds to __repr__ and __str__ special methods.
     mp_print_fun_t print;
-    mp_make_new_fun_t make_new;     // to make an instance of the type
 
+    // Corresponds to __new__ and __init__ special methods, to make an instance of the type.
+    mp_make_new_fun_t make_new;
+
+    // Corresponds to __call__ special method, ie T(...).
     mp_call_fun_t call;
-    mp_unary_op_fun_t unary_op;     // can return MP_OBJ_NULL if op not supported
-    mp_binary_op_fun_t binary_op;   // can return MP_OBJ_NULL if op not supported
 
-    // implements load, store and delete attribute
+    // Implements unary and binary operations.
+    // Can return MP_OBJ_NULL if the operation is not supported.
+    mp_unary_op_fun_t unary_op;
+    mp_binary_op_fun_t binary_op;
+
+    // Implements load, store and delete attribute.
     //
     // dest[0] = MP_OBJ_NULL means load
     //  return: for fail, do nothing
@@ -492,35 +504,36 @@ struct _mp_obj_type_t {
     //          for success set dest[0] = MP_OBJ_NULL
     mp_attr_fun_t attr;
 
-    mp_subscr_fun_t subscr;         // implements load, store, delete subscripting
-                                    // value=MP_OBJ_NULL means delete, value=MP_OBJ_SENTINEL means load, else store
-                                    // can return MP_OBJ_NULL if op not supported
+    // Implements load, store and delete subscripting:
+    //  - value = MP_OBJ_SENTINEL means load
+    //  - value = MP_OBJ_NULL means delete
+    //  - all other values mean store the value
+    // Can return MP_OBJ_NULL if operation not supported.
+    mp_subscr_fun_t subscr;
 
-    // corresponds to __iter__ special method
-    // can use given mp_obj_iter_buf_t to store iterator
-    // otherwise can return a pointer to an object on the heap
+    // Corresponds to __iter__ special method.
+    // Can use the given mp_obj_iter_buf_t to store iterator object,
+    // otherwise can return a pointer to an object on the heap.
     mp_getiter_fun_t getiter;
 
-    mp_fun_1_t iternext; // may return MP_OBJ_STOP_ITERATION as an optimisation instead of raising StopIteration() (with no args)
+    // Corresponds to __next__ special method.  May return MP_OBJ_STOP_ITERATION
+    // as an optimisation instead of raising StopIteration() with no args.
+    mp_fun_1_t iternext;
 
+    // Implements the buffer protocol if supported by this type.
     mp_buffer_p_t buffer_p;
+
     // One of disjoint protocols (interfaces), like mp_stream_p_t, etc.
     const void *protocol;
 
-    // these are for dynamically created types (classes)
-    struct _mp_obj_tuple_t *bases_tuple;
+    // A pointer to the parents of this type:
+    //  - 0 parents: pointer is NULL (object is implicitly the single parent)
+    //  - 1 parent: a pointer to the type of that parent
+    //  - 2 or more parents: pointer to a tuple object containing the parent types
+    const void *parent;
+
+    // A dict mapping qstrs to objects local methods/constants/etc.
     struct _mp_obj_dict_t *locals_dict;
-
-    /*
-    What we might need to add here:
-
-    len             str tuple list map
-    abs             float complex
-    hash            bool int none str
-    equal           int str
-
-    unpack seq      list tuple
-    */
 };
 
 // Constant types, globally accessible
@@ -603,6 +616,7 @@ extern const mp_obj_type_t mp_type_ZeroDivisionError;
 #define mp_const_true (MP_OBJ_FROM_PTR(&mp_const_true_obj))
 #define mp_const_empty_bytes (MP_OBJ_FROM_PTR(&mp_const_empty_bytes_obj))
 #define mp_const_empty_tuple (MP_OBJ_FROM_PTR(&mp_const_empty_tuple_obj))
+#define mp_const_notimplemented (MP_OBJ_FROM_PTR(&mp_const_notimplemented_obj))
 extern const struct _mp_obj_none_t mp_const_none_obj;
 extern const struct _mp_obj_bool_t mp_const_false_obj;
 extern const struct _mp_obj_bool_t mp_const_true_obj;
@@ -616,7 +630,6 @@ extern const struct _mp_obj_exception_t mp_const_GeneratorExit_obj;
 // General API for objects
 
 mp_obj_t mp_obj_new_type(qstr name, mp_obj_t bases_tuple, mp_obj_t locals_dict);
-mp_obj_t mp_obj_new_none(void);
 static inline mp_obj_t mp_obj_new_bool(mp_int_t x) { return x ? mp_const_true : mp_const_false; }
 mp_obj_t mp_obj_new_cell(mp_obj_t obj);
 mp_obj_t mp_obj_new_int(mp_int_t value);
@@ -649,7 +662,6 @@ mp_obj_t mp_obj_new_list(size_t n, mp_obj_t *items);
 mp_obj_t mp_obj_new_dict(size_t n_args);
 mp_obj_t mp_obj_new_set(size_t n_args, mp_obj_t *items);
 mp_obj_t mp_obj_new_slice(mp_obj_t start, mp_obj_t stop, mp_obj_t step);
-mp_obj_t mp_obj_new_super(mp_obj_t type, mp_obj_t obj);
 mp_obj_t mp_obj_new_bound_meth(mp_obj_t meth, mp_obj_t self);
 mp_obj_t mp_obj_new_getitem_iter(mp_obj_t *args, mp_obj_iter_buf_t *iter_buf);
 mp_obj_t mp_obj_new_module(qstr module_name);
@@ -673,6 +685,7 @@ mp_int_t mp_obj_get_int_truncated(mp_const_obj_t arg);
 bool mp_obj_get_int_maybe(mp_const_obj_t arg, mp_int_t *value);
 #if MICROPY_PY_BUILTINS_FLOAT
 mp_float_t mp_obj_get_float(mp_obj_t self_in);
+bool mp_obj_get_float_maybe(mp_obj_t arg, mp_float_t *value);
 void mp_obj_get_complex(mp_obj_t self_in, mp_float_t *real, mp_float_t *imag);
 #endif
 //qstr mp_obj_get_qstr(mp_obj_t arg);
@@ -683,7 +696,7 @@ mp_obj_t mp_obj_id(mp_obj_t o_in);
 mp_obj_t mp_obj_len(mp_obj_t o_in);
 mp_obj_t mp_obj_len_maybe(mp_obj_t o_in); // may return MP_OBJ_NULL
 mp_obj_t mp_obj_subscr(mp_obj_t base, mp_obj_t index, mp_obj_t val);
-mp_obj_t mp_generic_unary_op(mp_uint_t op, mp_obj_t o_in);
+mp_obj_t mp_generic_unary_op(mp_unary_op_t op, mp_obj_t o_in);
 
 // cell
 mp_obj_t mp_obj_cell_get(mp_obj_t self_in);
@@ -718,11 +731,16 @@ void mp_str_print_quoted(const mp_print_t *print, const byte *str_data, size_t s
 
 #if MICROPY_PY_BUILTINS_FLOAT
 // float
-mp_obj_t mp_obj_float_binary_op(mp_uint_t op, mp_float_t lhs_val, mp_obj_t rhs); // can return MP_OBJ_NULL if op not supported
+#if MICROPY_FLOAT_HIGH_QUALITY_HASH
+mp_int_t mp_float_hash(mp_float_t val);
+#else
+static inline mp_int_t mp_float_hash(mp_float_t val) { return (mp_int_t)val; }
+#endif
+mp_obj_t mp_obj_float_binary_op(mp_binary_op_t op, mp_float_t lhs_val, mp_obj_t rhs); // can return MP_OBJ_NULL if op not supported
 
 // complex
 void mp_obj_complex_get(mp_obj_t self_in, mp_float_t *real, mp_float_t *imag);
-mp_obj_t mp_obj_complex_binary_op(mp_uint_t op, mp_float_t lhs_real, mp_float_t lhs_imag, mp_obj_t rhs_in); // can return MP_OBJ_NULL if op not supported
+mp_obj_t mp_obj_complex_binary_op(mp_binary_op_t op, mp_float_t lhs_real, mp_float_t lhs_imag, mp_obj_t rhs_in); // can return MP_OBJ_NULL if op not supported
 #else
 #define mp_obj_is_float(o) (false)
 #endif
@@ -842,9 +860,10 @@ mp_obj_t mp_seq_extract_slice(size_t len, const mp_obj_t *seq, mp_bound_slice_t 
     /*printf("memmove(%p, %p, %d)\n", dest + (beg + slice_len), dest + end, (dest_len - end) * (item_sz));*/ \
     memmove(((char*)dest) + (beg + slice_len) * (item_sz), ((char*)dest) + (end) * (item_sz), (dest_len - end) * (item_sz));
 
+// Note: dest and slice regions may overlap
 #define mp_seq_replace_slice_grow_inplace(dest, dest_len, beg, end, slice, slice_len, len_adj, item_sz) \
     /*printf("memmove(%p, %p, %d)\n", dest + beg + len_adj, dest + beg, (dest_len - beg) * (item_sz));*/ \
-    memmove(((char*)dest) + (beg + len_adj) * (item_sz), ((char*)dest) + (beg) * (item_sz), (dest_len - beg) * (item_sz)); \
-    memcpy(((char*)dest) + (beg) * (item_sz), slice, slice_len * (item_sz));
+    memmove(((char*)dest) + (beg + slice_len) * (item_sz), ((char*)dest) + (end) * (item_sz), ((dest_len) + (len_adj) - ((beg) + (slice_len))) * (item_sz)); \
+    memmove(((char*)dest) + (beg) * (item_sz), slice, slice_len * (item_sz));
 
-#endif // __MICROPY_INCLUDED_PY_OBJ_H__
+#endif // MICROPY_INCLUDED_PY_OBJ_H

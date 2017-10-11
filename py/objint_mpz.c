@@ -1,5 +1,5 @@
 /*
- * This file is part of the Micro Python project, http://micropython.org/
+ * This file is part of the MicroPython project, http://micropython.org/
  *
  * The MIT License (MIT)
  *
@@ -74,7 +74,7 @@ const mp_obj_int_t mp_maxsize_obj = {
 #undef NUM_DIG
 #endif
 
-STATIC mp_obj_int_t *mp_obj_int_new_mpz(void) {
+mp_obj_int_t *mp_obj_int_new_mpz(void) {
     mp_obj_int_t *o = m_new_obj(mp_obj_int_t);
     o->base.type = &mp_type_int;
     mpz_init_zero(&o->mpz);
@@ -116,6 +116,7 @@ mp_obj_t mp_obj_int_from_bytes_impl(bool big_endian, size_t len, const byte *buf
 void mp_obj_int_to_bytes_impl(mp_obj_t self_in, bool big_endian, size_t len, byte *buf) {
     assert(MP_OBJ_IS_TYPE(self_in, &mp_type_int));
     mp_obj_int_t *self = MP_OBJ_TO_PTR(self_in);
+    memset(buf, 0, len);
     mpz_as_bytes(&self->mpz, big_endian, len, buf);
 }
 
@@ -161,7 +162,7 @@ mp_obj_t mp_obj_int_abs(mp_obj_t self_in) {
     }
 }
 
-mp_obj_t mp_obj_int_unary_op(mp_uint_t op, mp_obj_t o_in) {
+mp_obj_t mp_obj_int_unary_op(mp_unary_op_t op, mp_obj_t o_in) {
     mp_obj_int_t *o = MP_OBJ_TO_PTR(o_in);
     switch (op) {
         case MP_UNARY_OP_BOOL: return mp_obj_new_bool(!mpz_is_zero(&o->mpz));
@@ -173,7 +174,7 @@ mp_obj_t mp_obj_int_unary_op(mp_uint_t op, mp_obj_t o_in) {
     }
 }
 
-mp_obj_t mp_obj_int_binary_op(mp_uint_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
+mp_obj_t mp_obj_int_binary_op(mp_binary_op_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
     const mpz_t *zlhs;
     const mpz_t *zrhs;
     mpz_t z_int;
@@ -289,6 +290,13 @@ mp_obj_t mp_obj_int_binary_op(mp_uint_t op, mp_obj_t lhs_in, mp_obj_t rhs_in) {
 
             case MP_BINARY_OP_POWER:
             case MP_BINARY_OP_INPLACE_POWER:
+                if (mpz_is_neg(zrhs)) {
+                    #if MICROPY_PY_BUILTINS_FLOAT
+                    return mp_obj_float_binary_op(op, mpz_as_float(zlhs), rhs_in);
+                    #else
+                    mp_raise_ValueError("negative power with no float support");
+                    #endif
+                }
                 mpz_pow_inpl(&res->mpz, zlhs, zrhs);
                 break;
 
@@ -386,26 +394,6 @@ mp_obj_t mp_obj_new_int_from_uint(mp_uint_t value) {
     }
     return mp_obj_new_int_from_ull(value);
 }
-
-#if MICROPY_PY_BUILTINS_FLOAT
-mp_obj_t mp_obj_new_int_from_float(mp_float_t val) {
-    int cl = fpclassify(val);
-    if (cl == FP_INFINITE) {
-        nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_OverflowError, "can't convert inf to int"));
-    } else if (cl == FP_NAN) {
-        nlr_raise(mp_obj_new_exception_msg_varg(&mp_type_ValueError, "can't convert NaN to int"));
-    } else {
-        mp_fp_as_int_class_t icl = mp_classify_fp_as_int(val);
-        if (icl == MP_FP_CLASS_FIT_SMALLINT) {
-            return MP_OBJ_NEW_SMALL_INT((mp_int_t)val);
-        } else {
-            mp_obj_int_t *o = mp_obj_int_new_mpz();
-            mpz_set_from_float(&o->mpz, val);
-            return MP_OBJ_FROM_PTR(o);
-        }
-    }
-}
-#endif
 
 mp_obj_t mp_obj_new_int_from_str_len(const char **str, size_t len, bool neg, unsigned int base) {
     mp_obj_int_t *o = mp_obj_int_new_mpz();
